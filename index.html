@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Inventário de Comportamento Adaptativo</title>
+<style>
+  :root{
+    --bg:#0e1625; --card:#14213b; --line:#2b3f66;
+    --text:#f8fafc; --muted:#cbd5e1;
+    --pri:#6d28d9; --ok:#10b981; --err:#ef4444; --warn:#f59e0b;
+    --chip:#0b1220; --chipHover:#0f1a2e; --chipSel:#1e293b;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;
+    -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+  }
+  .wrap{max-width:1024px;margin:20px auto;padding:0 16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+  h1{margin:0 0 6px;font-size:1.45rem}
+  .muted{color:var(--muted)}
+  .grid-info{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0 6px}
+  @media (max-width:720px){.grid-info{grid-template-columns:1fr}}
+  .info{background:rgba(0,0,0,.18);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .info b{display:block;margin-bottom:4px;color:#e2e8f0}
+  .section{margin:18px 0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.18);font-weight:700}
+  .item{border:1px solid var(--line);border-radius:12px;padding:12px;background:rgba(0,0,0,.18);margin-bottom:12px}
+  .stem{font-size:1rem;margin-bottom:10px}
+  .scale{display:grid;grid-template-columns:repeat(3,minmax(200px,1fr));gap:10px}
+  @media (max-width:820px){ .scale{grid-template-columns:1fr} }
+  .opt{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--chip);cursor:pointer;transition:background .15s,border-color .15s,transform .05s}
+  .opt:hover{background:var(--chipHover);border-color:#4f70ff;transform:translateY(-1px)}
+  .opt input{appearance:none;-webkit-appearance:none;width:0;height:0;position:absolute;opacity:0}
+  .opt span{font-weight:600}
+  .opt small{opacity:.8}
+  .opt:has(input:checked){background:var(--chipSel);border-color:#6d28d9;box-shadow:0 0 0 1px #6d28d9 inset}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 12px}
+  .pill{display:inline-block;padding:4px 8px;border-radius:999px;border:1px solid var(--line);background:rgba(0,0,0,.25);font-size:.86rem}
+  .btn{display:inline-flex;align-items:center;gap:10px;background:var(--pri);border:none;color:#fff;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:600}
+  .btn.ok{background:var(--ok)}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--muted)}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
+  .msg{margin:12px 0;padding:12px;border-radius:10px}
+  .okbox{background:#06351f;border:1px solid #0e6c45;color:#c8ffe3}
+  .errbox{background:#3b0d0d;border:1px solid #7f1d1d;color:#ffd5d5}
+  .warnbox{background:#3a2903;border:1px solid #885e09;color:#ffe6b0}
+  .progress{height:10px;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .bar{height:100%;width:0%;background:linear-gradient(90deg,#6d28d9,#10b981)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Inventário de Comportamento Adaptativo (Professores)</h1>
+    <p class="muted">
+      As respostas serão emviadas diretamente para a profissional responsável.
+    </p>
+
+   
+    <div id="pacInfo" class="grid-info" style="display:none;"></div>
+
+    <div id="progressWrap" style="display:none;gap:8px;align-items:center;margin:8px 0 0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">
+        <span class="muted" id="progressText">Progresso: 0/0</span>
+        <button id="clearDraft" class="btn ghost" type="button">Limpar rascunho</button>
+      </div>
+      <div class="progress"><div class="bar" id="bar"></div></div>
+    </div>
+
+    <form id="form" style="margin-top:14px;display:none" novalidate>
+      <div id="qs"></div>
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+        <button id="btnSubmit" class="btn ok" type="submit">Enviar respostas</button>
+        <button id="btnSave" class="btn ghost" type="button">Salvar rascunho</button>
+      </div>
+      <div id="msg" class="msg" style="display:none" role="alert" aria-live="polite"></div>
+    </form>
+
+    <div id="alert" class="msg" style="display:none" role="alert" aria-live="assertive"></div>
+  </div>
+</div>
+
+<script>
+/* ========= CONFIG ========= */
+const SHEETDB_BASE = "https://sheetdb.io/api/v1/8pmdh33s9fvy8";
+const SHEETS = { PATIENTS:"Patients", TOKENS:"LinkTokens", SCORES:"Scores_VINELAND3_PROFESSORES" };
+const CODE = "VINELAND3_PROFESSORES";
+const PORTAL_URL = "https://integradaneuropsicologia.github.io/formularios/";
+const RELEASE_KEYS = ["VINELAND3_PROFESSORES"]; // coluna(s) de liberação no Patients, com valor "sim"
+
+/* ========= HELPERS ========= */
+const $ = s => document.querySelector(s);
+const onlyDigits = s => (s||"").replace(/\D+/g,"");
+const qs = k => new URLSearchParams(location.search).get(k) || "";
+function setBox(id, text, kind="ok"){
+  const el=$(id); if(!el) return;
+  el.textContent=text;
+  el.className="msg "+(kind==="ok"?"okbox":kind==="warn"?"warnbox":"errbox");
+  el.style.display="block";
+}
+function hideBox(id){
+  const el=$(id); if(!el) return;
+  el.style.display="none"; el.textContent="";
+}
+function maskCPF(cpf){
+  const d=onlyDigits(cpf||"");
+  if(d.length!==11) return cpf||"";
+  return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+}
+function fmtDateISO(iso){
+  if(!iso) return "";
+  const [y,m,d]=String(iso).split("-");
+  return (y&&m&&d)?`${d}/${m}/${y}`:iso;
+}
+async function GET(url){
+  const r=await fetch(url);
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return r.json();
+}
+async function sheetSearch(sheet, params){
+  const usp=new URLSearchParams(params);
+  return GET(`${SHEETDB_BASE}/search?sheet=${encodeURIComponent(sheet)}&${usp.toString()}`);
+}
+async function sheetCreate(sheet, row){
+  const r=await fetch(`${SHEETDB_BASE}?sheet=${encodeURIComponent(sheet)}`,{
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({data:[row]})
+  });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function sheetPatchBy(sheet, column, value, data){
+  const r=await fetch(`${SHEETDB_BASE}/${encodeURIComponent(column)}/${encodeURIComponent(value)}?sheet=${encodeURIComponent(sheet)}`,{
+    method:"PATCH",
+    headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({data})
+  });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+const TOKEN = qs("token");
+function goPortalWithToken(){
+  try{
+    const u=new URL(PORTAL_URL,location.href);
+    if(TOKEN) u.searchParams.set("token",TOKEN);
+    location.href=u.toString();
+  }catch(_){
+    const sep=PORTAL_URL.includes("?")?"&":"?";
+    location.href=PORTAL_URL+(TOKEN?sep+"token="+encodeURIComponent(TOKEN):"");
+  }
+}
+
+/* ========= DOMÍNIOS E ITENS ========= */
+const DOMAINS = [
+  {
+    key:"COM",
+    label:"Comunicação",
+    items: [
+  "A criança fala o próprio primeiro nome ou apelido quando perguntado.",
+  "A criança consegue nomear pelo menos três ações (por exemplo: beber/bebendo, comer/comendo, brincar/brincando).",
+  "Quando perguntada, a criança fala a própria idade corretamente (pode contar nos dedos).",
+  "A criança responde perguntas do tipo 'quem?' de forma adequada (por exemplo: 'Quem é esse?' → 'Esse é o João').",
+  "A criança reconhece ou identifica uma ou mais letras do alfabeto.",
+  "A criança entende o significado de gestos sociais mais complexos (por exemplo: chamar com a mão para aproximar, dedo nos lábios para 'silêncio', mãos abertas mostrando tamanho).",
+  "A criança segue instruções com duas ações relacionadas (por exemplo: 'Pegue os brinquedos e guarde', 'Pegue o casaco e vista').",
+  "A criança responde perguntas que começam com 'por que?' explicando o motivo (por exemplo: 'Por que você está chorando?' → 'Meu brinquedo quebrou').",
+  "A criança usa plural corretamente em substantivos (por exemplo: 'dois gatos', 'aquelas flores').",
+  "A criança segue instruções com uma ação e dois objetos/pessoas (por exemplo: 'Traga os giz de cera e a bola', 'Chame o José e a Maria para entrar').",
+  "A criança usa pronomes corretamente, com concordância adequada (por exemplo: eu, ele, ela, dele/dela).",
+  "A criança consegue contar partes básicas de uma história (de casa, de um livro, de um filme), explicando quem são os personagens, o que aconteceu e como terminou, de um jeito que faça sentido.",
+  "A criança usa verbos no passado de forma adequada (por exemplo: 'ele falou', 'eu queria').",
+  "A criança copia o próprio primeiro nome sem erros.",
+  "A criança usa conhecimento ou opinião própria para comentar situações e emoções de outras pessoas (por exemplo: 'Eu acho que ele ficou bravo porque ela falou coisa ruim dele').",
+  "A criança mantém atenção em uma explicação/apresentação formal (por exemplo, aula) por cerca de 30 minutos e demonstra entender o que está acontecendo.",
+  "Quando perguntada, a criança informa corretamente o mês e o dia do próprio aniversário.",
+  "A criança segue instruções que envolvem direita e esquerda (por exemplo: 'Vire para a esquerda', 'Olhe para a direita').",
+  "A criança escreve nome e sobrenome completos, de memória, sem erros importantes.",
+  "A criança escreve pelo menos 10 palavras simples (por exemplo: 'casa', 'bola'); pequenos erros de ortografia são aceitos.",
+  "Se não é compreendida na primeira vez, a criança reformula o que quis dizer usando outras palavras.",
+  "A criança presta atenção em uma apresentação informal (por exemplo: palestra curta ou vídeo educativo) por cerca de 30 minutos e entende o conteúdo.",
+  "A criança lê em voz alta frases simples com três ou mais palavras.",
+  "A criança entende sarcasmo/ironia em falas simples (percebe quando 'Isso é ótimo!' quer dizer 'Isso é horrível').",
+  "A criança consegue escrever bilhetes, cartas, e-mails ou pequenos textos com pelo menos três frases completas (pode usar abreviações e ter pequenos erros de ortografia ou gramática).",
+  "A criança consegue dar instruções/direções com três ou mais passos em ordem lógica (por exemplo: explicar como chegar em um lugar ou como fazer uma tarefa mais complexa).",
+  "Se recebe uma instrução para fazer algo mais tarde (até 1 hora depois), a criança lembra e faz sem precisar ser lembrada.",
+  "A criança consegue preencher formulários simples (em papel ou digitais) de até uma página, como fichas escolares.",
+  "A criança escreve ou desenha instruções passo a passo para outra pessoa (por exemplo: como fazer alguma coisa ou como chegar em algum lugar).",
+  "A criança usa a internet ou a biblioteca para pesquisar informações e produzir um trabalho ou tarefa.",
+  "A criança lê e compreende textos em nível de 4º ano escolar ou superior.",
+  "A criança escreve relatórios, redações ou trabalhos de pelo menos uma página usando palavras próprias (sem apenas copiar de outra fonte)."
+]
+  },
+  {
+    key:"AVD",
+    label:"Atividades de Vida Diária",
+    items: [
+  "A criança alimenta-se sozinha com talher sem derramar.",
+  "A criança é levada ao banheiro e utiliza o banheiro sem ajuda.",
+  "A criança consegue vestir roupas que abrem na frente (casaco, jaqueta) sem ajuda; não precisa abotoar ou fechar zíper para estar vestida.",
+  "A criança lava as mãos usando sabão e água, enxágua e seca; consegue abrir e fechar a torneira se necessário.",
+  "A criança encontra e usa o banheiro de forma apropriada, com independência e autonomia.",
+  "A criança conta em sequência numérica pelo menos 10 objetos, um por um.",
+  "A criança limpa ou assoa o nariz usando lenço, guardanapo, papel higiênico ou outro material apropriado.",
+  "A criança permanece em uma atividade por pelo menos 5 minutos sem exigir atenção direta do professor.",
+  "A criança compreende que o relógio serve para informar as horas (mesmo que ainda não saiba dizer as horas sozinha).",
+  "A criança cuida dos próprios objetos na escola (não perde e não danifica).",
+  "A criança demonstra noção de privacidade própria e dos outros (por exemplo, entende que usar o banheiro ou trocar de roupa é algo privado).",
+  "A criança identifica os números escritos de 1 a 9.",
+  "A criança cobre a boca e o nariz ao tossir ou espirrar.",
+  "A criança limpa a mesa ou o espaço de brincar ao final da atividade (joga lixo, limpa respingos de cola ou tinta).",
+  "A criança pede ajuda quando não compreende algo.",
+  "A criança mantém-se atenta e focada enquanto a professora está explicando durante a aula.",
+  "A criança se apresenta com as unhas cortadas e limpas.",
+  "A criança demonstra saber que alguns alimentos são mais saudáveis que outros (por exemplo, frutas e vegetais são mais saudáveis que alimentos muito açucarados ou gordurosos).",
+  "A criança usa a tecnologia oferecida pela escola (computador etc.) com independência quando necessário para realizar uma tarefa.",
+  "A criança relaciona um conteúdo ou material novo com algo que ela já conhece.",
+  "A criança entrega bilhetes, formulários etc. entre escola e casa e casa e escola por iniciativa própria (sem depender só de pais/professores para tirar da mochila).",
+  "A criança completa as lições de casa e entrega no prazo combinado.",
+  "A criança diz os 12 meses do ano em ordem, quando perguntada.",
+  "A criança entende que alguns itens custam mais do que outros e consegue comparar preços (por exemplo: 'Tenho dinheiro para o chiclete, mas não para a barra de chocolate', ou 'Qual caneta custa menos?').",
+  "A criança diz corretamente o valor de 2 reais, 5 reais e 10 reais quando perguntada.",
+  "A criança diz as horas usando um relógio digital ou de ponteiros.",
+  "A criança informa em que horário acontecem atividades do dia a dia (por exemplo: '10:30 é o intervalo', '12:00 é hora do almoço').",
+  "A criança usa régua, fita métrica ou outro instrumento de medida para medir em centímetros e metros.",
+  "A criança compreende frações comuns (por exemplo: 1/2, 1/3, 1/4).",
+  "A criança revisa o próprio trabalho para encontrar enganos e erros.",
+  "A criança resolve subtração com números de dois dígitos fazendo empréstimo quando necessário.",
+  "A criança planeja e organiza projetos de longo prazo para não atrasar a entrega (sabe quais tarefas precisa fazer e estima o tempo necessário)."
+]
+  },
+  {
+    key:"SOC",
+    label:"Socialização",
+    items: [
+  "A criança reconhece o próprio gênero e o gênero dos outros (por exemplo: diz 'Eu sou um menino' ou 'Maria é uma menina').",
+  "A criança brinca de forma interativa com um ou mais colegas por pelo menos 5 minutos, com um adulto supervisionando.",
+  "A criança consegue falar sobre o próprio relacionamento com outras pessoas (por exemplo: 'Essa é minha professora', 'Ele é meu irmão').",
+  "A criança ajuda os outros quando é solicitada.",
+  "A criança compartilha brinquedos ou materiais pessoais quando é solicitada.",
+  "A criança participa de jogos simples em grupo, sem pontuação, ao ar livre (por exemplo: pular corda, pega-pega, esconde-esconde).",
+  "A criança brinca de forma interativa com um ou mais colegas por pelo menos 20 minutos, com um adulto supervisionando.",
+  "A criança agradece quando recebe algo (por exemplo: diz 'obrigado(a)').",
+  "A criança se protege afastando-se de colegas que machucam os outros ou destroem coisas (por exemplo: colegas que mordem, batem, jogam coisas, quebram objetos).",
+  "A criança usa palavras ou gestos para expressar angústia em vez de gritar, bater ou jogar objetos.",
+  "A criança aceita sugestões ou soluções dadas por professores ou outras pessoas.",
+  "A criança demonstra, por iniciativa própria, felicidade, empatia ou preocupação com os outros (por exemplo: abraça, dá a mão, pergunta 'Você está bem?').",
+  "A criança chama outras pessoas para brincar ou passar tempo junto.",
+  "A criança controla raiva ou mágoa quando há mudanças de planos por motivos externos (por exemplo: um evento escolar é cancelado por mau tempo ou problema no transporte).",
+  "A criança consegue esperar a própria vez quando é solicitado, durante um jogo ou atividade esportiva.",
+  "A criança modifica conscientemente seu comportamento dependendo de quanto conhece a outra pessoa (por exemplo: age de forma diferente com um colega novo em comparação com um amigo próximo).",
+  "A criança demonstra bom senso esportivo durante jogos e esportes: joga de forma justa, não é excessivamente agressiva, parabeniza quem vence e não reage mal quando perde.",
+  "A criança controla raiva ou frustração quando não consegue algo que quer (por exemplo: quando um pedido é negado).",
+  "A criança se mostra disposta a ajustar sua fala ou comportamento para evitar conflito.",
+  "A criança ajusta o tom de voz de acordo com a situação (por exemplo: fala mais baixo quando a sala precisa de silêncio e fala mais alto quando os outros não conseguem ouvi-la).",
+  "A criança muda de assunto quando necessário durante uma conversa; não fica presa em um único tema.",
+  "A criança participa de jogos simples, em ambientes internos e externos, que envolvem competição (por exemplo: jogo da velha, futebol, jogos de cartas).",
+  "A criança ajusta o próprio comportamento para não atrapalhar quem está em volta (por exemplo: fica em silêncio perto de pessoas que estão trabalhando).",
+  "A criança coopera com outras pessoas para planejar ou participar de atividades e trabalhos em grupo.",
+  "A criança respeita o tempo do outro (por exemplo: não interrompe alguém ocupado e não faz o outro ficar esperando sem necessidade).",
+  "A criança se afasta ou deixa de participar de um grupo quando os outros dão sinais verbais ou não verbais de que ela não é bem-vinda.",
+  "A criança pensa nas consequências das próprias ações antes de agir (por exemplo: se controla para não agir de forma impulsiva e leva em conta informações importantes).",
+  "A criança inicia conversas informais quando encontra pessoas conhecidas (por exemplo: 'Como você está?', 'E aí?').",
+  "A criança participa de conversas sobre assuntos que não são de interesse próprio.",
+  "A criança entende sugestões indiretas ou pistas sociais durante conversas (por exemplo: entende que um bocejo pode significar 'Estou entediado', que mudar de assunto pode significar 'Não quero falar disso', ou que olhar para o relógio pode significar 'Eu preciso encerrar essa conversa').",
+  "A criança fornece explicações adicionais quando necessário para ajudar o outro a entender o que ela quis dizer (por exemplo: 'Caso você não tenha ouvido...', 'A gente estava falando sobre...')."
+]
+  },
+  {
+    key:"HMOT",
+    label:"Atividades",
+    items: [
+  "A criança joga bola em uma direção específica (não joga de qualquer jeito, mas direciona).",
+  "A criança pula no chão com os dois pés sem cair.",
+  "A criança sobe e desce brinquedos altos (por exemplo: trepa-trepa, escorregador com vários degraus) de maneira segura.",
+  "A criança fica em um pé só por pelo menos 2 segundos.",
+  "A criança corre com facilidade, mudando velocidade e direção (por exemplo: em pega-pega ou em atividades esportivas).",
+  "A criança caminha dois ou mais quarteirões sem precisar parar para descansar ou pedir apoio físico.",
+  "A criança anda com cuidado em calçadas ou pisos escorregadios ou irregulares.",
+  "A criança faz movimento de rosquear com a mão (por exemplo: dar corda em um brinquedo, abrir/fechar tampa de frasco).",
+  "A criança segura e usa giz de cera, caneta ou lápis na posição correta (preensão trípode, não segurando 'inteiro' com a mão).",
+  "A criança aperta botões com precisão em um teclado pequeno ou tela de toque (por exemplo: calculadora, celular ou outro dispositivo portátil).",
+  "A criança pega uma bola pequena a uma distância de meio metro a um metro, usando uma ou as duas mãos, afastadas do corpo.",
+  "A criança usa tesoura para cortar ao longo de uma linha reta em uma folha de papel comum.",
+  "A criança desenha mais de uma forma reconhecível (por exemplo: pessoa, casa, árvore).",
+  "A criança recorta formas simples (por exemplo: círculo, quadrado, retângulo).",
+  "A criança usa borracha sem rasgar o papel.",
+  "A criança monta, constrói ou cria estruturas complexas com brinquedos de montar, lápis e papéis etc.",
+  "A criança pinta um desenho de página inteira usando duas ou mais cores, mantendo todas as cores dentro do contorno.",
+  "A criança desenha uma linha reta usando uma régua.",
+  "A criança sabe fazer um nó ou laço.",
+  "A criança recorta formas complexas (por exemplo: estrelas, animais, letras do alfabeto)."
+]
+  }
+];
+
+/* ========= RENDER ========= */
+function renderQuestions(){
+  const host=$("#qs"); host.innerHTML="";
+  let count=0;
+
+  DOMAINS.forEach(domain=>{
+    const sec=document.createElement('div');
+    sec.className='section';
+    sec.textContent=domain.label;
+    host.appendChild(sec);
+
+    domain.items.forEach(txt=>{
+      count++;
+      const qn=String(count).padStart(3,'0');
+
+      const row=document.createElement('div');
+      row.className='item';
+      row.setAttribute('data-q',String(count));
+
+      const stem=document.createElement('div');
+      stem.className='stem';
+      stem.id=`s${qn}`;
+      stem.textContent = `${count}. ${txt}`;
+
+      const scale=document.createElement('div');
+      scale.className='scale';
+
+      // valores:
+      // 0 = Nunca
+      // 1 = Às vezes
+      // 2 = Frequentemente / Usualmente
+      // 0 = Não se aplica (contribui 0 no score)
+      const CHOICES=[
+        {v:2,l:'Usualmente ou frequentemente'},
+        {v:1,l:'Às vezes'},
+        {v:0,l:'Nunca'},
+        {v:0,l:'Não se aplica'}
+      ];
+
+      CHOICES.forEach(c=>{
+        const lab=document.createElement('label');
+        lab.className='opt';
+        lab.title=`${c.l} (${c.v})`;
+        const id=`q${qn}_${c.v}_${c.l.replace(/\s+/g,'_')}`;
+        lab.innerHTML=`
+          <input type="radio" name="q${qn}" id="${id}" value="${c.v}" required aria-labelledby="s${qn}">
+          <span>${c.l}</span><small></small>`;
+        scale.appendChild(lab);
+      });
+
+      row.append(stem,scale);
+      host.appendChild(row);
+    });
+  });
+
+  // Atualiza total para progresso inicial
+  $("#progressText").textContent = `Progresso: 0/${count}`;
+}
+
+/* ========= ESTADO ========= */
+let patient=null, tokenRow=null, CPF="";
+const STORAGE_KEY = `VINELAND3_ENTREVISTA_${qs("token")||"anon"}`;
+let startAt = Date.now();
+
+/* ========= BOOT ========= */
+(async function boot(){
+  try{
+    if(!TOKEN){
+      setBox("#alert","Link inválido (sem token). Solicite um novo link.","err");
+      return;
+    }
+
+    const trows=await sheetSearch(SHEETS.TOKENS,{token:TOKEN});
+    if(!trows.length) throw new Error("Token inválido ou expirado.");
+    tokenRow=trows[0];
+    if(String(tokenRow.disabled||"não").toLowerCase()==="sim") throw new Error("Token desativado.");
+    if(tokenRow.expires_at && new Date(tokenRow.expires_at) < new Date()) throw new Error("Token expirado.");
+    CPF=onlyDigits(tokenRow.cpf||"");
+    if(!CPF) throw new Error("Token sem CPF vinculado.");
+
+    const prows=await sheetSearch(SHEETS.PATIENTS,{cpf:CPF});
+    if(!prows.length) throw new Error("Paciente não encontrado.");
+    patient=prows[0];
+
+    const isAllowed = RELEASE_KEYS.some(k => String(patient[k]||"").trim().toLowerCase()==="sim");
+    if(!isAllowed){
+      setBox("#alert","Este formulário não está liberado para você.","err");
+      return;
+    }
+
+    // Já respondeu?
+    const already=await sheetSearch(SHEETS.SCORES,{cpf:CPF,code:CODE});
+    const doneKeys=RELEASE_KEYS.map(k=>`${k}_FEITO`);
+    const anyDoneFlag=doneKeys.some(k=>String(patient[k]||"").trim().toLowerCase()==="sim");
+    if(anyDoneFlag || (already && already.length)){
+      setBox("#alert","Você já respondeu este formulário. Voltando ao portal…","ok");
+      setTimeout(goPortalWithToken,1200);
+      return;
+    }
+
+    renderPatientInfo();
+    renderQuestions();
+    restoreDraft();
+    updateProgress();
+
+    $("#pacInfo").style.display="grid";
+    $("#form").style.display="block";
+    $("#progressWrap").style.display="block";
+    hideBox("#alert");
+
+    startAt = Date.now();
+  }catch(err){
+    console.error(err);
+    setBox("#alert", err.message || "Falha ao abrir o formulário.", "err");
+  }
+})();
+
+function renderPatientInfo(){
+  const g=$("#pacInfo"); g.innerHTML="";
+  const info=[
+    ["Nome", patient.nome||"-"],
+    ["Nascimento", fmtDateISO(patient.data_nascimento)]
+  ];
+
+  for(const [k,v] of info){
+    const div=document.createElement("div");
+    div.className="info";
+    div.innerHTML=`<b>${k}</b><div>${v||"-"}</div>`;
+    g.appendChild(div);
+  }
+}
+
+/* ========= RASCUNHO ========= */
+function saveDraft(){
+  const data={};
+  document.querySelectorAll('input[type="radio"][name^="q"]:checked').forEach(el=>{
+    data[el.name]=Number(el.value);
+  });
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }catch(_){}
+}
+function restoreDraft(){
+  try{
+    const raw=localStorage.getItem(STORAGE_KEY); if(!raw) return;
+    const data=JSON.parse(raw||"{}");
+    Object.entries(data).forEach(([k,v])=>{
+      const el=document.querySelector(`input[name="${k}"][value="${v}"]`);
+      if(el) el.checked=true;
+    });
+  }catch(_){}
+}
+function clearDraft(){
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (_) {
+    // ignore
+  }
+}
+function countTotalItems(){
+  return DOMAINS.reduce((a,d)=>a+d.items.length,0);
+}
+function countAnswered(){
+  return document.querySelectorAll('input[type="radio"][name^="q"]:checked').length;
+}
+function updateProgress(){
+  const ans=countAnswered(), tot=countTotalItems();
+  $("#progressText").textContent=`Progresso: ${ans}/${tot}`;
+  $("#bar").style.width=`${(ans/tot)*100}%`;
+}
+
+/* ========= EVENTOS ========= */
+addEventListener('change', e=>{
+  if(e.target && e.target.matches('input[type="radio"][name^="q"]')){
+    saveDraft(); updateProgress();
+  }
+});
+$("#btnSave").addEventListener('click', ()=>{
+  saveDraft();
+  setBox("#msg","Rascunho salvo neste dispositivo.","ok");
+});
+$("#clearDraft").addEventListener('click', ()=>{
+  clearDraft();
+  setBox("#msg","Rascunho apagado.","warn");
+});
+
+/* ========= CÁLCULOS ========= */
+function domainSum(domainIndex){
+  // soma dos valores marcados naquele domínio
+  let base=0;
+  for(let i=0;i<domainIndex;i++) base += DOMAINS[i].items.length;
+  let sum=0;
+  for(let j=1;j<=DOMAINS[domainIndex].items.length;j++){
+    const qn=String(base+j).padStart(3,'0');
+    const sel=document.querySelector(`input[name="q${qn}"]:checked`);
+    sum += sel ? Number(sel.value) : 0;
+  }
+  return sum;
+}
+function totalSum(){
+  let s=0;
+  const n=countTotalItems();
+  for(let i=1;i<=n;i++){
+    const qn=String(i).padStart(3,'0');
+    const sel=document.querySelector(`input[name="q${qn}"]:checked`);
+    s += sel ? Number(sel.value) : 0;
+  }
+  return s;
+}
+
+/* ========= SUBMIT ========= */
+let sending=false;
+$("#form").addEventListener("submit", async (e)=>{
+  e.preventDefault();
+  if(sending) return;
+  sending=true;
+  hideBox("#msg");
+
+  const btn=$("#btnSubmit");
+  const t=btn.textContent;
+  btn.disabled=true;
+  btn.textContent="Enviando…";
+
+  try{
+    // validação: todos respondidos
+    const tot=countTotalItems();
+    for(let i=1;i<=tot;i++){
+      const qn=String(i).padStart(3,'0');
+      if(!document.querySelector(`input[name="q${qn}"]:checked`)){
+        const row=document.querySelector(`.item[data-q="${i}"]`);
+        if(row) row.scrollIntoView({behavior:'smooth',block:'center'});
+        throw new Error(`Responda o item ${i}.`);
+      }
+    }
+
+    // somatórios por domínio / total
+    const somaCOM  = domainSum(0);
+    const somaAVD  = domainSum(1);
+    const somaSOC  = domainSum(2);
+    const somaHMOT = domainSum(3);
+    const total    = totalSum();
+
+    const categoria_csv = [
+      `Comunicacao=${somaCOM}`,
+      `AVD=${somaAVD}`,
+      `Socializacao=${somaSOC}`,
+      `Atividades=${somaHMOT}`
+    ].join(',');
+
+    // montar perguntas/respostas para salvar em 'questions'
+    // e também map de respostas numéricas pra metrics.answers
+    const qaList = [];
+    const answersMap = {};
+
+    for(let i=1;i<=tot;i++){
+      const qn = String(i).padStart(3,'0');
+      const sel = document.querySelector(`input[name="q${qn}"]:checked`);
+      const rawVal = sel ? Number(sel.value) : null;
+
+      // pega texto visível da opção (ex.: "Às vezes")
+      let prettyVal = "";
+      if(sel){
+        const lbl = sel.closest('label.opt');
+        if(lbl){
+          const span = lbl.querySelector('span');
+          if(span){ prettyVal = span.textContent.trim(); }
+        }
+      }
+
+      // pega texto da pergunta (stem)
+      const stemEl = document.getElementById(`s${qn}`);
+      const qText = stemEl ? stemEl.textContent.replace(/^\s*\d+\.\s*/, "").trim() : `Item ${i}`;
+
+      qaList.push({
+        n: i,
+        q: qText,
+        raw: rawVal,
+        pretty: prettyVal
+      });
+
+      answersMap[`q${qn}`] = rawVal;
+    }
+
+    // duração total da sessão
+    const durationSec = Math.round((Date.now() - startAt)/1000);
+
+    // escreve na planilha
+    await sheetCreate(SHEETS.SCORES, {
+      result_id: `${patient.cpf}_${CODE}_${Date.now()}`,
+      token: TOKEN,
+      cpf: patient.cpf,
+      code: CODE,
+      source: "paciente",
+      submitted_at: new Date().toISOString(),
+      total: total,
+      categoria: categoria_csv,
+      questions: JSON.stringify(qaList), // <- perguntas+respostas
+      metrics: JSON.stringify({
+        answers: answersMap,
+        duration_sec: durationSec
+      })
+    });
+
+    // marca como feito
+    const patch={};
+    RELEASE_KEYS.map(k=>`${k}_FEITO`).forEach(k=>{
+      if(k in patient) patch[k]="sim";
+    });
+    if(Object.keys(patch).length===0){
+      patch[`${RELEASE_KEYS[0]}_FEITO`] = "sim";
+    }
+    await sheetPatchBy(SHEETS.PATIENTS,"cpf",patient.cpf,patch);
+
+    clearDraft();
+    setBox("#msg","Formulário enviado. Voltando ao portal…","ok");
+    setTimeout(goPortalWithToken,1100);
+
+  }catch(err){
+    console.error(err);
+    setBox("#msg", err.message || "Falha ao enviar. Tente novamente.", "err");
+    sending=false;
+    btn.disabled=false;
+    btn.textContent=t;
+  }
+});
+</script>
+</body>
+</html>
